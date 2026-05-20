@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>[쥐냥] 오지큐 스티커 클튜자동 gif 생성기</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -125,6 +126,13 @@
       </div>
     </div>
   </div>
+
+  <div class="row">
+    <label>ZIP 파일명</label>
+    <input type="text" id="zipName" placeholder="PSD 떨구면 자동으로 채워짐"
+           style="flex:1;min-width:240px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px">
+    <span style="color:#6b7280;font-size:12px">.zip 자동 추가</span>
+  </div>
 </div>
 
 <div class="card">
@@ -215,6 +223,9 @@ async function loadPsd(file) {
   clearLog();
   $('fileName').textContent = file.name;
   $('generate').disabled = true;
+  // PSD 파일명에서 .psd 떼어내 ZIP 이름 입력란에 기본값으로 채움 (사용자가 비웠거나 안 수정했을 때)
+  const baseName = file.name.replace(/\.psd$/i, '');
+  if (!$('zipName').value) $('zipName').value = baseName;
   log(`📂 파일 로딩: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`);
   try {
     const buffer = await file.arrayBuffer();
@@ -479,8 +490,10 @@ $('generate').addEventListener('click', async () => {
   const zipBlob = await zip.generateAsync({ type: 'blob' }, meta => {
     setProgress(meta.percent / 100);
   });
-  const zipName = (psdData.imageResources?.idsSeedNumber ? '' : '') +
-    `오지큐_GIF_${new Date().toISOString().slice(0,10)}.zip`;
+  let zipName = $('zipName').value.trim();
+  if (!zipName) zipName = '오지큐_GIF';
+  zipName = zipName.replace(/[\/\\:*?"<>|]/g, '_'); // 파일명 안전 문자 처리
+  if (!/\.zip$/i.test(zipName)) zipName += '.zip';
   saveAs(zipBlob, zipName);
   log(`✨ 완료! ${zipName} 다운로드`, 'ok');
 
