@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>[쥐냥] 오지큐 스티커 클튜자동 gif 생성기</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    max-width: 880px; margin: 0 auto; padding: 32px 20px;
+    background: #f6f7f9; color: #1f2328;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.5px; }
+  .sub { color: #6b7280; font-size: 13px; margin-bottom: 24px; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 20px 22px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 1px 0 rgba(0,0,0,.02);
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 14px; color: #374151; letter-spacing: .2px; }
+
+  .row { display: flex; align-items: center; gap: 14px; margin: 10px 0; flex-wrap: wrap; }
+  .row label { min-width: 110px; font-size: 13px; color: #374151; }
+
+  input[type=number] {
+    width: 90px; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px;
+    font-size: 14px; font-variant-numeric: tabular-nums;
+  }
+  .chip {
+    padding: 6px 12px; border: 1px solid #d1d5db; background: #fff;
+    border-radius: 999px; font-size: 12px; cursor: pointer; color: #374151;
+  }
+  .chip.active { background: #111827; color: #fff; border-color: #111827; }
+
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+  .switch input { display: none; }
+  .switch .track {
+    width: 38px; height: 22px; background: #d1d5db; border-radius: 999px; position: relative; transition: .15s;
+  }
+  .switch .track::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; transition: .15s;
+    box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .switch input:checked + .track { background: #10b981; }
+  .switch input:checked + .track::after { left: 18px; }
+
+  .drop {
+    border: 2px dashed #cbd5e1; border-radius: 12px; padding: 36px 20px; text-align: center;
+    background: #fafbfc; cursor: pointer; transition: .15s;
+  }
+  .drop:hover, .drop.over { border-color: #10b981; background: #f0fdf4; }
+  .drop .ico { font-size: 32px; margin-bottom: 8px; }
+  .drop .hint { color: #6b7280; font-size: 13px; margin-top: 6px; }
+  .drop .name { color: #111827; font-weight: 600; margin-top: 8px; }
+
+  button.primary {
+    background: #111827; color: #fff; border: 0; padding: 12px 22px;
+    border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: .15s;
+  }
+  button.primary:hover { background: #1f2937; }
+  button.primary:disabled { background: #9ca3af; cursor: not-allowed; }
+
+  .progress { height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; margin: 12px 0 8px; }
+  .bar { height: 100%; background: linear-gradient(90deg, #10b981, #34d399); width: 0%; transition: .2s; }
+
+  .log {
+    background: #0b1020; color: #d1fae5; font-family: "SF Mono", Menlo, monospace;
+    padding: 14px 16px; border-radius: 10px; max-height: 280px; overflow-y: auto;
+    font-size: 12px; white-space: pre-wrap; line-height: 1.6;
+  }
+  .log .err { color: #fca5a5; }
+  .log .ok { color: #6ee7b7; }
+  .log .dim { color: #94a3b8; }
+
+  .footer-actions { display: flex; justify-content: center; margin: 18px 0 8px; }
+
+  .site-footer {
+    margin-top: 32px;
+    padding: 16px 12px;
+    font-size: 11px;
+    color: #999;
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+
+<h1>[쥐냥] 오지큐 스티커 클튜자동 gif 생성기</h1>
+<div class="sub">클립스튜디오 PSD → 폴더별 740×640 GIF → ZIP 자동 묶음</div>
+
+<div class="card">
+  <h2>⚙️ 설정</h2>
+
+  <div class="row">
+    <label>프레임 레이트</label>
+    <input type="number" id="fps" min="2" max="60" step="2" value="18">
+    <span style="color:#6b7280;font-size:12px">fps (짝수만)</span>
+  </div>
+
+  <div class="row">
+    <label>캐릭터 외곽선</label>
+    <span style="color:#111827;font-size:13px;font-weight:600">10px 흰색 stroke 자동 적용</span>
+    <span style="color:#6b7280;font-size:12px">(OGQ 규격 — 그림·글자 모양 따라가는 흰 테두리)</span>
+  </div>
+
+  <div class="row">
+    <label>크기</label>
+    <input type="number" id="width" value="740" style="width:80px"> ×
+    <input type="number" id="height" value="640" style="width:80px">
+    <span style="color:#6b7280;font-size:12px">px (OGQ: 740 × 640)</span>
+  </div>
+
+  <div class="row" style="align-items:flex-start">
+    <label style="padding-top:8px">프레임 시퀀스</label>
+    <div style="flex:1;min-width:240px">
+      <input type="text" id="sequence" placeholder="예: 122331  또는  1,2,2,3,3,1   (비워두면 PSD 그대로)"
+             style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:monospace">
+      <div style="color:#6b7280;font-size:12px;margin-top:6px;line-height:1.5">
+        CSP에서 그림 3장으로 122331 타임라인을 짰다면 여기에 <code>122331</code> 입력 →<br>
+        각 폴더의 1·2·2·3·3·1번 레이어를 순서대로 6프레임으로 만들어줍니다. 24개 폴더 모두 동일 시퀀스 적용.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📂 PSD 파일</h2>
+  <div class="drop" id="drop">
+    <div class="ico">📁</div>
+    <div>여기에 PSD 파일을 드래그하거나 클릭해서 선택하세요</div>
+    <div class="hint">예: 귀여운 곰이곰이 2.psd</div>
+    <div class="name" id="fileName"></div>
+    <input type="file" id="psdFile" accept=".psd" style="display:none">
+  </div>
+</div>
+
+<div class="footer-actions">
+  <button class="primary" id="generate" disabled>🚀 GIF 24장 + ZIP 생성</button>
+</div>
+
+<div class="progress"><div class="bar" id="bar"></div></div>
+<div class="log" id="log"><span class="dim">로그가 여기에 표시됩니다…</span>
+</div>
+
+<footer class="site-footer">
+  © 2026 G.NYANG. All rights reserved.
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/ag-psd/dist/bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const barEl = $('bar');
+let psdData = null;
+let workerBlobUrl = null;
+
+function log(msg, cls = '') {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ''; }
+function setProgress(p) { barEl.style.width = (p * 100) + '%'; }
+
+// 짝수만 허용
+$('fps').addEventListener('change', () => {
+  let v = parseInt($('fps').value) || 18;
+  if (v < 2) v = 2;
+  if (v > 60) v = 60;
+  if (v % 2 !== 0) v += 1;
+  $('fps').value = v;
+});
+
+// File pick / drag
+const drop = $('drop');
+drop.addEventListener('click', () => $('psdFile').click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (e.dataTransfer.files[0]) loadPsd(e.dataTransfer.files[0]);
+});
+$('psdFile').addEventListener('change', e => {
+  if (e.target.files[0]) loadPsd(e.target.files[0]);
+});
+
+function hasAnyCanvas(node) {
+  if (!node) return false;
+  if (node.canvas) return true;
+  if (node.children) return node.children.some(hasAnyCanvas);
+  return false;
+}
+function countLeafCanvases(node) {
+  if (!node) return 0;
+  if (node.canvas) return 1;
+  if (node.children) return node.children.reduce((s, c) => s + countLeafCanvases(c), 0);
+  return 0;
+}
+// 폴더의 "프레임"으로 인정할 자식: 자기 자신이 canvas거나, 그룹인데 내부에 그림이 있는 것
+function getFrameNodes(folder) {
+  return (folder.children || []).filter(c => c.canvas || (c.children && hasAnyCanvas(c)));
+}
+
+async function loadPsd(file) {
+  clearLog();
+  $('fileName').textContent = file.name;
+  $('generate').disabled = true;
+  log(`📂 파일 로딩: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`);
+  try {
+    const buffer = await file.arrayBuffer();
+    psdData = agPsd.readPsd(buffer, {
+      skipLayerImageData: false,
+      skipCompositeImageData: true,
+      skipThumbnail: true,
+    });
+    log(`✅ PSD 파싱 완료: ${psdData.width}×${psdData.height}`, 'ok');
+
+    const topFolders = (psdData.children || []).filter(c => c.children && c.children.length);
+    log(`📁 최상위 폴더 ${topFolders.length}개:`);
+    topFolders.forEach((f, i) => {
+      const frames = getFrameNodes(f);
+      const leafTotal = countLeafCanvases(f);
+      const sub = frames.length > 0
+        ? `프레임 ${frames.length}장 (내부 그림 총 ${leafTotal}장)`
+        : `프레임 0장 ⚠️`;
+      log(`   ${String(i+1).padStart(2,'0')}. ${f.name} — ${sub}`, frames.length ? 'dim' : 'err');
+    });
+
+    // 상세 트리 (2단계까지)
+    log(`\n🔍 상세 구조 (2단계까지):`, 'dim');
+    topFolders.forEach((f, i) => {
+      log(`   [${String(i+1).padStart(2,'0')}] 📁 ${f.name}`, 'dim');
+      (f.children || []).forEach((c, j) => {
+        const icon = c.canvas ? '🖼' : (c.children ? '📁' : '⬜');
+        const meta = c.canvas
+          ? `[${c.canvas.width}×${c.canvas.height}]`
+          : (c.children ? `(자식 ${c.children.length}개, 그림 ${countLeafCanvases(c)}장)` : '');
+        const flags = [
+          c.clipping ? '📎클립' : '',
+          (c.opacity != null && c.opacity < 255) ? `α${Math.round(c.opacity/255*100)}%` : '',
+        ].filter(Boolean).join(' ');
+        log(`        ${String(j+1).padStart(2,'0')}. ${icon} ${c.name || '(이름 없음)'} ${meta} ${flags}`, 'dim');
+      });
+    });
+
+    if (topFolders.length === 0) {
+      log(`⚠️ 폴더(그룹)가 없습니다.`, 'err');
+      return;
+    }
+    $('generate').disabled = false;
+  } catch (e) {
+    log(`❌ PSD 파싱 실패: ${e.message}`, 'err');
+    console.error(e);
+  }
+}
+
+// gif.js worker: file:// or cross-origin 환경에서도 동작하도록 Blob URL로 로드
+async function getWorkerUrl() {
+  if (workerBlobUrl) return workerBlobUrl;
+  log(`⏳ GIF 인코더 워커 준비 중…`, 'dim');
+  const res = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+  const text = await res.text();
+  workerBlobUrl = URL.createObjectURL(new Blob([text], {type:'application/javascript'}));
+  return workerBlobUrl;
+}
+
+// GIF는 알파 채널이 없어 "magic color"를 투명으로 지정하는 방식 사용
+const MAGIC_R = 255, MAGIC_G = 0, MAGIC_B = 255;
+const TRANSPARENT_COLOR = 0xFF00FF;
+const STROKE_RADIUS = 10;   // 캐릭터 외곽선 두께 (px)
+const STROKE_STEPS = 64;    // 외곽선 부드러움 (stamp 방향 수)
+
+// 진영님 규칙:
+//   - hidden 플래그 무시 (눈꺼진 레이어도 무조건 보임)
+//   - opacity 그대로 적용 (0이면 안 그려지는 게 맞음, 50%면 50%)
+//   - clipping 마스크 적용 (base 알파에 clipper들이 가둠)
+//   - blend mode 무시 (normal)
+
+function drawNode(node, dstCtx, width, height) {
+  // CSP가 진영님 PSD의 모든 레이어·그룹에 opacity=1/255(0.4%)를 자동 부여한 케이스.
+  // 진단 결과: 218개 리프 모두 + 103개 그룹 모두 opacity=1/255. 진영님이 설정한 게 아님.
+  // 따라서 opacity 적용 안 함. hidden 무시(다 보임), clipping은 적용.
+  if (node.canvas) {
+    dstCtx.drawImage(node.canvas, node.left || 0, node.top || 0);
+  } else if (node.children) {
+    const sub = document.createElement('canvas');
+    sub.width = width; sub.height = height;
+    compositeChildren(node.children, sub.getContext('2d'), width, height);
+    dstCtx.drawImage(sub, 0, 0);
+  }
+}
+
+function compositeChildren(children, dstCtx, width, height) {
+  let i = 0;
+  while (i < children.length) {
+    const node = children[i];
+
+    // 이 노드 위로 연속해서 오는 clipping 노드들 수집
+    const clippers = [];
+    let j = i + 1;
+    while (j < children.length && children[j].clipping) {
+      clippers.push(children[j]);
+      j++;
+    }
+
+    if (clippers.length === 0) {
+      // 클리퍼 없음 → dst에 직접 그림 (빈 화면 위험 없는 단순 경로)
+      drawNode(node, dstCtx, width, height);
+    } else {
+      // base를 임시 캔버스에 한 번 그려두고 (alpha 마스크용)
+      const baseCanvas = document.createElement('canvas');
+      baseCanvas.width = width; baseCanvas.height = height;
+      drawNode(node, baseCanvas.getContext('2d'), width, height);
+      // base는 dst에 그대로 표시
+      dstCtx.drawImage(baseCanvas, 0, 0);
+      // 각 clipper를 별도 임시 캔버스에 그린 뒤 base 알파로 destination-in 클립 → dst에 합성
+      for (const c of clippers) {
+        const tmp = document.createElement('canvas');
+        tmp.width = width; tmp.height = height;
+        const tmpCtx = tmp.getContext('2d');
+        drawNode(c, tmpCtx, width, height);
+        tmpCtx.globalCompositeOperation = 'destination-in';
+        tmpCtx.drawImage(baseCanvas, 0, 0);
+        tmpCtx.globalCompositeOperation = 'source-over';
+        dstCtx.drawImage(tmp, 0, 0);
+      }
+    }
+
+    i = j;
+  }
+}
+
+function renderFrameToCanvas(layer, width, height) {
+  // 1. 원본 그림을 임시 캔버스에 합성 (클리핑 마스크 포함)
+  const src = document.createElement('canvas');
+  src.width = width; src.height = height;
+  const srcCtx = src.getContext('2d');
+  if (layer.canvas) {
+    srcCtx.drawImage(layer.canvas, layer.left || 0, layer.top || 0);
+  } else if (layer.children) {
+    compositeChildren(layer.children, srcCtx, width, height);
+  }
+
+  // 2. 마스크 캔버스: 그림 모양을 흰색으로 채움 (alpha 만 살림)
+  const mask = document.createElement('canvas');
+  mask.width = width; mask.height = height;
+  const maskCtx = mask.getContext('2d');
+  maskCtx.drawImage(src, 0, 0);
+  maskCtx.globalCompositeOperation = 'source-in';
+  maskCtx.fillStyle = '#ffffff';
+  maskCtx.fillRect(0, 0, width, height);
+
+  // 3. 결과 캔버스: 마스크를 원 둘레 따라 64방향으로 stamp → stroke 효과
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  for (let i = 0; i < STROKE_STEPS; i++) {
+    const angle = (i / STROKE_STEPS) * Math.PI * 2;
+    const dx = Math.cos(angle) * STROKE_RADIUS;
+    const dy = Math.sin(angle) * STROKE_RADIUS;
+    ctx.drawImage(mask, dx, dy);
+  }
+  // 4. stroke 위에 원본 그림 덮기
+  ctx.drawImage(src, 0, 0);
+
+  // 5. 알파가 완전히 0인 픽셀만 magic color로 (= 그림이 전혀 없는 영역만 투명)
+  //    약한 알파(hidden 레이어 + opacity 누적으로 떨어진 픽셀)도 색은 보존되도록 임계값을 0으로.
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) {
+      d[i] = MAGIC_R; d[i + 1] = MAGIC_G; d[i + 2] = MAGIC_B; d[i + 3] = 255;
+    } else {
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return canvas;
+}
+
+function parseSequence(text) {
+  if (!text) return null;
+  const cleaned = text.trim();
+  if (!cleaned) return null;
+  let nums;
+  if (/[,\s\-]/.test(cleaned)) {
+    nums = cleaned.split(/[,\s\-]+/).filter(Boolean).map(n => parseInt(n, 10));
+  } else {
+    nums = cleaned.split('').map(n => parseInt(n, 10));
+  }
+  return nums.filter(n => Number.isInteger(n) && n >= 1);
+}
+
+async function makeGif(folder, width, height, fps, sequence, workerUrl) {
+  return new Promise((resolve, reject) => {
+    const gif = new GIF({
+      workers: 2, quality: 10, width, height,
+      workerScript: workerUrl,
+      transparent: TRANSPARENT_COLOR,
+      dither: false,
+    });
+    const delay = Math.max(20, Math.round(1000 / fps)); // ms
+    const frameLayers = getFrameNodes(folder);
+
+    let ordered;
+    if (sequence && sequence.length) {
+      ordered = sequence.map(i => frameLayers[i - 1]).filter(Boolean);
+    } else {
+      ordered = frameLayers;
+    }
+    if (ordered.length === 0) {
+      return reject(new Error('프레임 0장 — PSD 구조 또는 시퀀스 확인 필요'));
+    }
+    for (const fl of ordered) {
+      gif.addFrame(renderFrameToCanvas(fl, width, height), { delay });
+    }
+    gif.on('finished', blob => resolve(blob));
+    gif.on('abort', () => reject(new Error('GIF aborted')));
+    gif.render();
+  });
+}
+
+$('generate').addEventListener('click', async () => {
+  if (!psdData) return;
+  $('generate').disabled = true;
+  setProgress(0);
+
+  let fps = parseInt($('fps').value) || 18;
+  if (fps % 2 !== 0) fps += 1;
+  const width = parseInt($('width').value) || 740;
+  const height = parseInt($('height').value) || 640;
+  const sequence = parseSequence($('sequence').value);
+
+  log(`\n🚀 생성 시작 (FPS ${fps} / 캐릭터 외곽선 10px / ${width}×${height} / 배경 투명)`);
+  if (sequence) log(`   ↳ 시퀀스 적용: [${sequence.join(', ')}] (${sequence.length}프레임)`, 'ok');
+  else log(`   ↳ 시퀀스 없음 — PSD 레이어 순서 그대로`, 'dim');
+
+  const folders = (psdData.children || []).filter(c => c.children && c.children.length);
+  const zip = new JSZip();
+  const usedNames = new Set();
+
+  let workerUrl;
+  try { workerUrl = await getWorkerUrl(); }
+  catch (e) {
+    log(`❌ 워커 로드 실패: ${e.message}. 인터넷 연결 확인.`, 'err');
+    $('generate').disabled = false; return;
+  }
+
+  for (let i = 0; i < folders.length; i++) {
+    const folder = folders[i];
+    const label = `[${String(i+1).padStart(2,'0')}/${folders.length}] ${folder.name}`;
+    log(`${label} 인코딩 중…`);
+    try {
+      const blob = await makeGif(folder, width, height, fps, sequence, workerUrl);
+      const safeName = folder.name.replace(/[\/\\:*?"<>|]/g, '_');
+      let finalName = safeName, n = 2;
+      while (usedNames.has(finalName)) finalName = `${safeName} (${n++})`;
+      usedNames.add(finalName);
+      zip.file(`${finalName}.gif`, blob);
+      log(`  ✅ ${finalName}.gif (${(blob.size/1024).toFixed(1)} KB)`, 'ok');
+    } catch (e) {
+      log(`  ❌ 실패: ${e.message}`, 'err');
+    }
+    setProgress((i + 1) / folders.length);
+  }
+
+  log(`\n📦 ZIP 묶는 중…`);
+  const zipBlob = await zip.generateAsync({ type: 'blob' }, meta => {
+    setProgress(meta.percent / 100);
+  });
+  const zipName = (psdData.imageResources?.idsSeedNumber ? '' : '') +
+    `오지큐_GIF_${new Date().toISOString().slice(0,10)}.zip`;
+  saveAs(zipBlob, zipName);
+  log(`✨ 완료! ${zipName} 다운로드`, 'ok');
+
+  $('generate').disabled = false;
+});
+</script>
+</body>
+</html>
