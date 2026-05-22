@@ -2,8 +2,28 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>[쥐냥] 오지큐 스티커 클튜자동 gif 뽑기</title>
+<title>[쥐냥]오지큐 gif 메이커_클튜</title>
 <link rel="icon" type="image/png" href="favicon.png">
+
+<!-- PWA: 홈 화면에 추가하면 풀스크린 앱처럼 동작 -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="favicon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="오지큐gif클튜">
+<meta name="theme-color" content="#fbbf24">
+
+<!-- 카카오톡·SNS 공유 미리보기 (OpenGraph) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="[쥐냥]오지큐 gif 메이커_클튜">
+<meta property="og:description" content="클립스튜디오 PSD → 폴더별 740×640 GIF → ZIP 자동 묶음">
+<meta property="og:image" content="https://ogq-gif-maker-clipstudio.vercel.app/favicon.png">
+<meta property="og:image:width" content="1080">
+<meta property="og:image:height" content="1080">
+<meta property="og:image:type" content="image/png">
+<meta property="og:url" content="https://ogq-gif-maker-clipstudio.vercel.app/">
+<meta property="og:locale" content="ko_KR">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -90,7 +110,7 @@
 </head>
 <body>
 
-<h1>[쥐냥] 오지큐 스티커 클튜자동 gif 뽑기</h1>
+<h1>[쥐냥]오지큐 gif 메이커_클튜</h1>
 <div class="sub">클립스튜디오 PSD → 폴더별 740×640 GIF → ZIP 자동 묶음</div>
 
 <div class="card">
@@ -147,7 +167,7 @@
 </div>
 
 <div class="footer-actions">
-  <button class="primary" id="make" disabled>🚀 GIF 24장 + ZIP 뽑기</button>
+  <button class="primary" id="make" disabled>🚀 GIF 24장 + ZIP 만들기</button>
 </div>
 
 <div class="progress"><div class="bar" id="bar"></div></div>
@@ -453,7 +473,7 @@ $('make').addEventListener('click', async () => {
   const height = parseInt($('height').value) || 640;
   const sequence = parseSequence($('sequence').value);
 
-  log(`\n🚀 뽑기 시작 (FPS ${fps} / 캐릭터 외곽선 10px / ${width}×${height} / 배경 투명)`);
+  log(`\n🚀 메이커 시작 (FPS ${fps} / 캐릭터 외곽선 10px / ${width}×${height} / 배경 투명)`);
   if (sequence) log(`   ↳ 시퀀스 적용: [${sequence.join(', ')}] (${sequence.length}프레임)`, 'ok');
   else log(`   ↳ 시퀀스 없음 — PSD 레이어 순서 그대로`, 'dim');
 
