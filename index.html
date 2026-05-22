@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>[쥐냥] 오지큐 스티커 클튜자동 gif 생성기</title>
+<title>[쥐냥] 오지큐 스티커 클튜자동 gif 뽑기</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <style>
   * { box-sizing: border-box; }
@@ -90,7 +90,7 @@
 </head>
 <body>
 
-<h1>[쥐냥] 오지큐 스티커 클튜자동 gif 생성기</h1>
+<h1>[쥐냥] 오지큐 스티커 클튜자동 gif 뽑기</h1>
 <div class="sub">클립스튜디오 PSD → 폴더별 740×640 GIF → ZIP 자동 묶음</div>
 
 <div class="card">
@@ -147,7 +147,7 @@
 </div>
 
 <div class="footer-actions">
-  <button class="primary" id="generate" disabled>🚀 GIF 24장 + ZIP 생성</button>
+  <button class="primary" id="make" disabled>🚀 GIF 24장 + ZIP 뽑기</button>
 </div>
 
 <div class="progress"><div class="bar" id="bar"></div></div>
@@ -222,7 +222,7 @@ function getFrameNodes(folder) {
 async function loadPsd(file) {
   clearLog();
   $('fileName').textContent = file.name;
-  $('generate').disabled = true;
+  $('make').disabled = true;
   // PSD 파일명에서 .psd 떼어내 ZIP 이름 입력란에 기본값으로 채움 (사용자가 비웠거나 안 수정했을 때)
   const baseName = file.name.replace(/\.psd$/i, '');
   if (!$('zipName').value) $('zipName').value = baseName;
@@ -268,7 +268,7 @@ async function loadPsd(file) {
       log(`⚠️ 폴더(그룹)가 없습니다.`, 'err');
       return;
     }
-    $('generate').disabled = false;
+    $('make').disabled = false;
   } catch (e) {
     log(`❌ PSD 파싱 실패: ${e.message}`, 'err');
     console.error(e);
@@ -442,9 +442,9 @@ async function makeGif(folder, width, height, fps, sequence, workerUrl) {
   });
 }
 
-$('generate').addEventListener('click', async () => {
+$('make').addEventListener('click', async () => {
   if (!psdData) return;
-  $('generate').disabled = true;
+  $('make').disabled = true;
   setProgress(0);
 
   let fps = parseInt($('fps').value) || 18;
@@ -453,7 +453,7 @@ $('generate').addEventListener('click', async () => {
   const height = parseInt($('height').value) || 640;
   const sequence = parseSequence($('sequence').value);
 
-  log(`\n🚀 생성 시작 (FPS ${fps} / 캐릭터 외곽선 10px / ${width}×${height} / 배경 투명)`);
+  log(`\n🚀 뽑기 시작 (FPS ${fps} / 캐릭터 외곽선 10px / ${width}×${height} / 배경 투명)`);
   if (sequence) log(`   ↳ 시퀀스 적용: [${sequence.join(', ')}] (${sequence.length}프레임)`, 'ok');
   else log(`   ↳ 시퀀스 없음 — PSD 레이어 순서 그대로`, 'dim');
 
@@ -465,7 +465,7 @@ $('generate').addEventListener('click', async () => {
   try { workerUrl = await getWorkerUrl(); }
   catch (e) {
     log(`❌ 워커 로드 실패: ${e.message}. 인터넷 연결 확인.`, 'err');
-    $('generate').disabled = false; return;
+    $('make').disabled = false; return;
   }
 
   for (let i = 0; i < folders.length; i++) {
@@ -497,7 +497,7 @@ $('generate').addEventListener('click', async () => {
   saveAs(zipBlob, zipName);
   log(`✨ 완료! ${zipName} 다운로드`, 'ok');
 
-  $('generate').disabled = false;
+  $('make').disabled = false;
 });
 </script>
 </body>
