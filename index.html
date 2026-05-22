@@ -124,8 +124,10 @@
 
   <div class="row">
     <label>캐릭터 외곽선</label>
-    <span style="color:#111827;font-size:13px;font-weight:600">10px 흰색 stroke 자동 적용</span>
-    <span style="color:#6b7280;font-size:12px">(OGQ 규격 — 그림·글자 모양 따라가는 흰 테두리)</span>
+    <input type="range" id="strokeRange" min="0" max="20" value="10" step="1">
+    <input type="number" id="strokeNum" min="0" max="20" value="10"
+           style="width:64px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-variant-numeric:tabular-nums">
+    <span style="color:#6b7280;font-size:12px">px (기본 10, 0이면 외곽선 없음)</span>
   </div>
 
   <div class="row">
@@ -308,8 +310,19 @@ async function getWorkerUrl() {
 // GIF는 알파 채널이 없어 "magic color"를 투명으로 지정하는 방식 사용
 const MAGIC_R = 255, MAGIC_G = 0, MAGIC_B = 255;
 const TRANSPARENT_COLOR = 0xFF00FF;
-const STROKE_RADIUS = 10;   // 캐릭터 외곽선 두께 (px)
 const STROKE_STEPS = 64;    // 외곽선 부드러움 (stamp 방향 수)
+// STROKE_RADIUS는 사용자 입력에서 동적으로 읽어옴 (slider/number input)
+
+// 슬라이더 ↔ number input 동기화
+const strokeRange = document.getElementById('strokeRange');
+const strokeNum = document.getElementById('strokeNum');
+strokeRange.addEventListener('input', () => { strokeNum.value = strokeRange.value; });
+strokeNum.addEventListener('input', () => {
+  let v = parseInt(strokeNum.value) || 0;
+  v = Math.max(0, Math.min(20, v));
+  strokeNum.value = v;
+  strokeRange.value = v;
+});
 
 // 진영님 규칙:
 //   - hidden 플래그 무시 (눈꺼진 레이어도 무조건 보임)
@@ -371,7 +384,7 @@ function compositeChildren(children, dstCtx, width, height) {
   }
 }
 
-function renderFrameToCanvas(layer, width, height) {
+function renderFrameToCanvas(layer, width, height, strokeRadius) {
   // 1. 원본 그림을 임시 캔버스에 합성 (클리핑 마스크 포함)
   const src = document.createElement('canvas');
   src.width = width; src.height = height;
@@ -382,27 +395,31 @@ function renderFrameToCanvas(layer, width, height) {
     compositeChildren(layer.children, srcCtx, width, height);
   }
 
-  // 2. 마스크 캔버스: 그림 모양을 흰색으로 채움 (alpha 만 살림)
-  const mask = document.createElement('canvas');
-  mask.width = width; mask.height = height;
-  const maskCtx = mask.getContext('2d');
-  maskCtx.drawImage(src, 0, 0);
-  maskCtx.globalCompositeOperation = 'source-in';
-  maskCtx.fillStyle = '#ffffff';
-  maskCtx.fillRect(0, 0, width, height);
-
-  // 3. 결과 캔버스: 마스크를 원 둘레 따라 64방향으로 stamp → stroke 효과
+  // 결과 캔버스
   const canvas = document.createElement('canvas');
   canvas.width = width; canvas.height = height;
   const ctx = canvas.getContext('2d');
 
-  for (let i = 0; i < STROKE_STEPS; i++) {
-    const angle = (i / STROKE_STEPS) * Math.PI * 2;
-    const dx = Math.cos(angle) * STROKE_RADIUS;
-    const dy = Math.sin(angle) * STROKE_RADIUS;
-    ctx.drawImage(mask, dx, dy);
+  // strokeRadius > 0이면 외곽선 적용, 0이면 원본만
+  if (strokeRadius > 0) {
+    // 2. 마스크 캔버스: 그림 모양을 흰색으로 채움 (alpha 만 살림)
+    const mask = document.createElement('canvas');
+    mask.width = width; mask.height = height;
+    const maskCtx = mask.getContext('2d');
+    maskCtx.drawImage(src, 0, 0);
+    maskCtx.globalCompositeOperation = 'source-in';
+    maskCtx.fillStyle = '#ffffff';
+    maskCtx.fillRect(0, 0, width, height);
+
+    // 3. 마스크를 원 둘레 따라 64방향으로 stamp → stroke 효과
+    for (let i = 0; i < STROKE_STEPS; i++) {
+      const angle = (i / STROKE_STEPS) * Math.PI * 2;
+      const dx = Math.cos(angle) * strokeRadius;
+      const dy = Math.sin(angle) * strokeRadius;
+      ctx.drawImage(mask, dx, dy);
+    }
   }
-  // 4. stroke 위에 원본 그림 덮기
+  // 4. stroke 위에 원본 그림 덮기 (외곽선 없으면 그냥 원본)
   ctx.drawImage(src, 0, 0);
 
   // 5. 알파가 완전히 0인 픽셀만 magic color로 (= 그림이 전혀 없는 영역만 투명)
@@ -433,13 +450,15 @@ function parseSequence(text) {
   return nums.filter(n => Number.isInteger(n) && n >= 1);
 }
 
-async function makeGif(folder, width, height, fps, sequence, workerUrl) {
+async function makeGif(folder, width, height, fps, sequence, workerUrl, strokeRadius) {
   return new Promise((resolve, reject) => {
     const gif = new GIF({
       workers: 4, quality: 1, width, height,
       workerScript: workerUrl,
       transparent: TRANSPARENT_COLOR,
-      dither: 'FloydSteinberg-serpentine',
+      // dither는 끔 — magic transparent color(#FF00FF)가 dither로 미세 변형되어
+      // 투명 인식 실패 → 분홍 배경 누출. quality:1만으로도 양자화 정확도 OK.
+      dither: false,
     });
     const delay = Math.max(20, Math.round(1000 / fps)); // ms
     const frameLayers = getFrameNodes(folder);
@@ -454,7 +473,7 @@ async function makeGif(folder, width, height, fps, sequence, workerUrl) {
       return reject(new Error('프레임 0장 — PSD 구조 또는 시퀀스 확인 필요'));
     }
     for (const fl of ordered) {
-      gif.addFrame(renderFrameToCanvas(fl, width, height), { delay });
+      gif.addFrame(renderFrameToCanvas(fl, width, height, strokeRadius), { delay });
     }
     gif.on('finished', blob => resolve(blob));
     gif.on('abort', () => reject(new Error('GIF aborted')));
@@ -472,8 +491,9 @@ $('make').addEventListener('click', async () => {
   const width = parseInt($('width').value) || 740;
   const height = parseInt($('height').value) || 640;
   const sequence = parseSequence($('sequence').value);
+  const strokeRadius = Math.max(0, Math.min(20, parseInt($('strokeNum').value) || 0));
 
-  log(`\n🚀 메이커 시작 (FPS ${fps} / 캐릭터 외곽선 10px / ${width}×${height} / 배경 투명)`);
+  log(`\n🚀 메이커 시작 (FPS ${fps} / 캐릭터 외곽선 ${strokeRadius}px / ${width}×${height} / 배경 투명)`);
   if (sequence) log(`   ↳ 시퀀스 적용: [${sequence.join(', ')}] (${sequence.length}프레임)`, 'ok');
   else log(`   ↳ 시퀀스 없음 — PSD 레이어 순서 그대로`, 'dim');
 
@@ -497,7 +517,7 @@ $('make').addEventListener('click', async () => {
     const label = `[${String(i+1).padStart(2,'0')}/${folders.length}] ${folder.name}`;
     log(`${label} 인코딩 중…`);
     try {
-      const blob = await makeGif(folder, width, height, fps, sequence, workerUrl);
+      const blob = await makeGif(folder, width, height, fps, sequence, workerUrl, strokeRadius);
       const safeFolder = folder.name.replace(/[\/\\:*?"<>|]/g, '_');
       let finalName = `${prefixBase}_${safeFolder}`, n = 2;
       while (usedNames.has(finalName)) finalName = `${prefixBase}_${safeFolder} (${n++})`;
