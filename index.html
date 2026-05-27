@@ -93,18 +93,6 @@
   .mode-pill:hover { border-color:#10b981; color:#111827; transform: translateY(-1px); }
   .mode-pill.active { background:#111827; color:#fff; border-color:#111827; }
   .mode-auto { font-size:11px; color:#10b981; font-weight:700; margin-left:auto; }
-  .guide-box {
-    background:#f6f8fa; border:1px solid #e5e7eb; border-radius:10px;
-    padding:14px 16px; margin:0 0 18px; font-size:12.5px; color:#475569; line-height:1.65;
-  }
-  .guide-box .g { display:flex; gap:9px; align-items:flex-start; }
-  .guide-box .g + .g { margin-top:7px; }
-  .guide-box .k {
-    flex-shrink:0; font-weight:800; font-size:11px; color:#fff; background:#10b981;
-    border-radius:6px; padding:2px 9px; margin-top:1px; min-width:38px; text-align:center;
-  }
-  .guide-box .k.gray { background:#9ca3af; }
-  .guide-box b { color:#111827; font-weight:700; }
   .drop .ico { font-size: 32px; margin-bottom: 8px; }
   .drop .hint { color: #6b7280; font-size: 13px; margin-top: 6px; }
   .drop .name { color: #111827; font-weight: 600; margin-top: 8px; }
@@ -149,17 +137,18 @@
 <div class="card">
   <h2>⚙️ 설정</h2>
 
-  <div class="row">
-    <label>프레임 레이트</label>
-    <input type="number" id="fps" min="10" max="40" step="1" value="18">
-    <span style="color:#6b7280;font-size:12px">fps (10~40)</span>
-  </div>
-
-  <div class="row">
-    <label>캐릭터 외곽선</label>
-    <input type="number" id="strokeNum" min="0" max="20" value="10"
-           style="width:80px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-variant-numeric:tabular-nums">
-    <span style="color:#6b7280;font-size:12px">px (기본 10, 0이면 외곽선 없음)</span>
+  <div style="display:flex;gap:14px;flex-wrap:wrap">
+    <div class="row" style="flex:1;min-width:230px">
+      <label style="min-width:84px">프레임 레이트</label>
+      <input type="number" id="fps" min="10" max="40" step="1" value="18">
+      <span style="color:#6b7280;font-size:12px">fps (10~40)</span>
+    </div>
+    <div class="row" style="flex:1;min-width:230px">
+      <label style="min-width:84px">캐릭터 외곽선</label>
+      <input type="number" id="strokeNum" min="0" max="20" value="10"
+             style="width:80px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-variant-numeric:tabular-nums">
+      <span style="color:#6b7280;font-size:12px">px (0이면 없음)</span>
+    </div>
   </div>
 
   <div class="row">
@@ -192,7 +181,7 @@
   <h2>📂 PSD 파일</h2>
   <div class="mode-bar">
     <span class="mode-label">입력 모드</span>
-    <button type="button" class="mode-pill active" id="modeClip">클립스튜디오<small>PSD 1개 · 폴더=스티커</small></button>
+    <button type="button" class="mode-pill active" id="modeClip">클립스튜디오<small>PSD 1개 · 스티커 여러개</small></button>
     <button type="button" class="mode-pill" id="modePro">프로크리에이트<small>PSD 여러 개 · 파일=스티커</small></button>
     <span class="mode-auto" id="modeAuto"></span>
   </div>
@@ -209,13 +198,6 @@
 <div class="card">
   <h2>🖼️ 메인 · 탭 이미지 (선택 · PNG 직접 업로드)</h2>
 
-  <div class="guide-box">
-    <div class="g"><span class="k">메인</span><span>완성한 이미지를 <b>PNG</b>로 준비하세요.</span></div>
-    <div class="g"><span class="k">탭</span><span><b>글자 없는</b> 이미지를 PNG로 준비하세요.</span></div>
-    <div class="g"><span class="k gray">공통</span><span><b>사이즈는 상관없어요</b> — 파일만 넣으면 OGQ 규격(메인 240×240 · 탭 96×74)으로 자동 변환돼요.</span></div>
-    <div class="g"><span class="k gray">처리</span><span>사이즈 변경 · 비율 유지 · 자동 확대 · 테두리</span></div>
-  </div>
-
   <div class="row" style="align-items:flex-start;gap:18px;flex-wrap:wrap">
 
     <!-- 메인 이미지 -->
@@ -223,7 +205,8 @@
       <div class="drop" id="dropMain" style="padding:24px 14px">
         <button type="button" class="clear-x" id="clearMain" title="제거">×</button>
         <div class="ico">🖼️</div>
-        <div style="font-size:13px;font-weight:600">메인 이미지 PNG</div>
+        <div style="font-size:13px;font-weight:700">메인 이미지 PNG</div>
+        <div style="font-size:11.5px;color:#6b7280;margin-top:5px;line-height:1.5">완성한 이미지 · 글자 OK<br>사이즈 상관없이 <b style="color:#374151">240×240</b> 자동 변환</div>
         <div class="name" id="mainName"></div>
         <input type="file" id="mainFile" accept=".png,image/png" style="display:none">
       </div>
@@ -241,7 +224,8 @@
       <div class="drop" id="dropTab" style="padding:24px 14px">
         <button type="button" class="clear-x" id="clearTab" title="제거">×</button>
         <div class="ico">🖼️</div>
-        <div style="font-size:13px;font-weight:600">탭 이미지 PNG</div>
+        <div style="font-size:13px;font-weight:700">탭 이미지 PNG</div>
+        <div style="font-size:11.5px;color:#6b7280;margin-top:5px;line-height:1.5"><b style="color:#374151">글자 없는</b> 이미지<br>사이즈 상관없이 <b style="color:#374151">96×74</b> 자동 변환</div>
         <div class="name" id="tabName"></div>
         <input type="file" id="tabFile" accept=".png,image/png" style="display:none">
       </div>
@@ -452,17 +436,31 @@ strokeNum.addEventListener('input', () => {
 //   - clipping 마스크 적용 (base 알파에 clipper들이 가둠)
 //   - blend mode 무시 (normal)
 
+// 레이어 불투명도를 적용하되, CSP가 export 때 모든 레이어를 1/255(0.4%)로 깨뜨린
+// 케이스는 무시(100%)한다. 진짜 0.4%를 의도하는 사람은 없으니, 비정상적으로 낮은
+// 값(≤ 2/255)은 "깨진 값"으로 보고 통과시킨다. 정상값(50%·65% 등)은 그대로 반영.
+function nodeOpacity(node) {
+  const op = node.opacity;
+  if (op === undefined || op === null) return 1;
+  if (op <= 2 / 255) return 1;   // CSP 1/255 버그 → 무시
+  return op;
+}
+
 function drawNode(node, dstCtx, width, height) {
-  // CSP가 진영님 PSD의 모든 레이어·그룹에 opacity=1/255(0.4%)를 자동 부여한 케이스.
-  // 진단 결과: 218개 리프 모두 + 103개 그룹 모두 opacity=1/255. 진영님이 설정한 게 아님.
-  // 따라서 opacity 적용 안 함. hidden 무시(다 보임), clipping은 적용.
+  const op = nodeOpacity(node);
   if (node.canvas) {
+    dstCtx.save();
+    dstCtx.globalAlpha = op;
     dstCtx.drawImage(node.canvas, node.left || 0, node.top || 0);
+    dstCtx.restore();
   } else if (node.children) {
     const sub = document.createElement('canvas');
     sub.width = width; sub.height = height;
     compositeChildren(node.children, sub.getContext('2d'), width, height);
+    dstCtx.save();
+    dstCtx.globalAlpha = op;   // 그룹 불투명도
     dstCtx.drawImage(sub, 0, 0);
+    dstCtx.restore();
   }
 }
 
