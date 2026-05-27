@@ -424,9 +424,17 @@ async function getWorkerUrl() {
   return workerBlobUrl;
 }
 
-// GIF는 알파 채널이 없어 "magic color"를 투명으로 지정하는 방식 사용
-const MAGIC_R = 255, MAGIC_G = 0, MAGIC_B = 255;
-const TRANSPARENT_COLOR = 0xFF00FF;
+// GIF는 알파 채널이 없어 한 색을 투명으로 지정(color key)하는 방식 사용.
+// 고정 마젠타(#FF00FF)는 분홍이 많은 그림에선 볼터치·입속 색이 같은 팔레트로 합쳐져
+// 투명 구멍이 뚫릴 수 있다 → 프레임마다 "실제로 안 쓰인" 색을 자동으로 골라 키로 쓴다.
+// (아래 후보 중 그림 색들과 가장 멀리 떨어진 색이 선택됨. 마젠타는 최후 후보.)
+const KEY_CANDIDATES = [
+  [0, 255, 0],    // 초록
+  [0, 255, 255],  // 시안
+  [0, 0, 255],    // 파랑
+  [128, 0, 255],  // 보라
+  [255, 0, 255],  // 마젠타 (최후 후보)
+];
 const STROKE_STEPS = 64;    // 외곽선 부드러움 (stamp 방향 수)
 // STROKE_RADIUS는 사용자 입력에서 동적으로 읽어옴 (slider/number input)
 
@@ -498,7 +506,8 @@ function compositeChildren(children, dstCtx, width, height) {
   }
 }
 
-function renderFrameToCanvas(layer, width, height, strokeRadius) {
+// 프레임을 알파 그대로 캔버스에 렌더 (합성 + 외곽선까지, 투명키 치환 전 단계)
+function renderFrameRGBA(layer, width, height, strokeRadius) {
   // 1. 원본 그림을 임시 캔버스에 합성 (클리핑 마스크 포함)
   const src = document.createElement('canvas');
   src.width = width; src.height = height;
@@ -536,13 +545,44 @@ function renderFrameToCanvas(layer, width, height, strokeRadius) {
   // 4. stroke 위에 원본 그림 덮기 (외곽선 없으면 그냥 원본)
   ctx.drawImage(src, 0, 0);
 
-  // 5. 알파가 완전히 0인 픽셀만 magic color로 (= 그림이 전혀 없는 영역만 투명)
-  //    약한 알파(hidden 레이어 + opacity 누적으로 떨어진 픽셀)도 색은 보존되도록 임계값을 0으로.
-  const imgData = ctx.getImageData(0, 0, width, height);
+  // 알파를 그대로 남긴 채 반환 (투명키 치환은 키 색을 정한 뒤 별도로)
+  return canvas;
+}
+
+// 이 GIF 프레임들에 "실제로 안 쓰인" 색을 투명키로 고른다.
+// 모든 불투명 픽셀에서 각 후보색까지의 최소 거리를 구해, 가장 멀리 떨어진 후보를 선택 →
+// 진한 분홍/마젠타를 볼터치·입속에 써도 투명 구멍이 안 뚫린다.
+function pickSafeKeyColor(canvases) {
+  const minDist = KEY_CANDIDATES.map(() => Infinity);
+  for (const cv of canvases) {
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;   // 투명(배경)은 무시
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      for (let k = 0; k < KEY_CANDIDATES.length; k++) {
+        const c = KEY_CANDIDATES[k];
+        const dr = r - c[0], dg = g - c[1], db = b - c[2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < minDist[k]) minDist[k] = dist;
+      }
+    }
+  }
+  let best = 0;
+  for (let k = 1; k < KEY_CANDIDATES.length; k++) {
+    if (minDist[k] > minDist[best]) best = k;
+  }
+  const [r, g, b] = KEY_CANDIDATES[best];
+  return { r, g, b, int: (r << 16) | (g << 8) | b, dist: Math.round(Math.sqrt(minDist[best])) };
+}
+
+// 알파 0 영역을 투명키 색으로 채우고, 나머지는 전부 불투명으로 (GIF는 반투명 불가)
+function applyTransparentKey(canvas, key) {
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
     if (d[i + 3] === 0) {
-      d[i] = MAGIC_R; d[i + 1] = MAGIC_G; d[i + 2] = MAGIC_B; d[i + 3] = 255;
+      d[i] = key.r; d[i + 1] = key.g; d[i + 2] = key.b; d[i + 3] = 255;
     } else {
       d[i + 3] = 255;
     }
@@ -566,14 +606,6 @@ function parseSequence(text) {
 
 async function makeGif(folder, width, height, fps, sequence, workerUrl, strokeRadius) {
   return new Promise((resolve, reject) => {
-    const gif = new GIF({
-      workers: 4, quality: 1, width, height,
-      workerScript: workerUrl,
-      transparent: TRANSPARENT_COLOR,
-      // dither는 끔 — magic transparent color(#FF00FF)가 dither로 미세 변형되어
-      // 투명 인식 실패 → 분홍 배경 누출. quality:1만으로도 양자화 정확도 OK.
-      dither: false,
-    });
     const delay = Math.max(20, Math.round(1000 / fps)); // ms
     const frameLayers = getFrameNodes(folder);
 
@@ -586,8 +618,23 @@ async function makeGif(folder, width, height, fps, sequence, workerUrl, strokeRa
     if (ordered.length === 0) {
       return reject(new Error('프레임 0장 — PSD 구조 또는 시퀀스 확인 필요'));
     }
-    for (const fl of ordered) {
-      gif.addFrame(renderFrameToCanvas(fl, width, height, strokeRadius), { delay });
+
+    // 1) 알파 그대로 모든 프레임 렌더 → 2) 그림에 안 쓰인 안전한 투명키 선택 → 3) 그 키로 GIF 생성
+    const rgbaFrames = ordered.map(fl => renderFrameRGBA(fl, width, height, strokeRadius));
+    const key = pickSafeKeyColor(rgbaFrames);
+    log(`  🔑 투명키 자동 선택: rgb(${key.r},${key.g},${key.b}) (그림과 거리 ${key.dist})`, 'dim');
+
+    const gif = new GIF({
+      workers: 4, quality: 1, width, height,
+      workerScript: workerUrl,
+      transparent: key.int,
+      // dither는 끔 — color key가 dither로 미세 변형되면 투명 인식 실패(배경 누출).
+      // 이제 키 색을 그림에서 멀리 떨어진 색으로 잡으므로 누출 위험은 크게 줄었지만,
+      // 안전하게 우선 유지. quality:1만으로도 양자화 정확도 OK.
+      dither: false,
+    });
+    for (const cv of rgbaFrames) {
+      gif.addFrame(applyTransparentKey(cv, key), { delay });
     }
     gif.on('finished', blob => resolve(blob));
     gif.on('abort', () => reject(new Error('GIF aborted')));
