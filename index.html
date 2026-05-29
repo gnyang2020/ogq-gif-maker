@@ -330,8 +330,21 @@ function countLeafCanvases(node) {
   if (node.children) return node.children.reduce((s, c) => s + countLeafCanvases(c), 0);
   return 0;
 }
-// 폴더의 "프레임"으로 인정할 자식: 자기 자신이 canvas거나, 그룹인데 내부에 그림이 있는 것
+// 프레임으로 인정할 자식 — 모드별 규칙
 function getFrameNodes(folder) {
+  // 프크 모드: 폴더(그룹)만 인정 (프크 PSD의 맨 아래 배경 레이어 자동 제외) + 가이드/배경 이름 제외
+  if (mode === 'procreate') {
+    const folders = (folder.children || []).filter(c =>
+      c.children && c.children.length > 0 && hasAnyCanvas(c)
+      && !/가이드|guide|배경|background/i.test(c.name || '')
+    );
+    // 폴더 이름이 모두 숫자로 시작(1, 2 / 01, 02 등) → 숫자 순으로 자동 정렬
+    if (folders.length >= 2 && folders.every(f => /^\s*\d+/.test(f.name || ''))) {
+      return [...folders].sort((a, b) => parseInt(a.name, 10) - parseInt(b.name, 10));
+    }
+    return folders;
+  }
+  // 클튜 모드: 기존 그대로 (자기 자신이 canvas거나, 그룹인데 내부에 그림이 있는 것)
   return (folder.children || []).filter(c => c.canvas || (c.children && hasAnyCanvas(c)));
 }
 
