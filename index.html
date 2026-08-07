@@ -191,6 +191,25 @@
   </div>
 
   <div class="row" style="align-items:flex-start">
+    <label style="padding-top:8px">용량 제한</label>
+    <div style="flex:1;min-width:240px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="min-width:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#374151;cursor:pointer">
+          <input type="checkbox" id="autoShrink" checked style="width:16px;height:16px;cursor:pointer"> 초과하면 자동 압축
+        </label>
+        <input type="number" id="sizeLimit" value="0.95" min="0.1" step="0.05" style="width:80px">
+        <span style="color:#6b7280;font-size:12px">MB</span>
+      </div>
+      <div style="color:#6b7280;font-size:12px;margin-top:6px;line-height:1.5">
+        오지큐 애니메이션 스티커는 <b style="color:#374151">1개당 1MB 이하</b>여야 합니다.
+        기본값 0.95는 안전 여유분입니다.<br>
+        한도를 넘는 GIF만 <b style="color:#374151">비슷한 색끼리 합쳐서</b> 압축하며, 한도 밑으로 내려가는 즉시 멈춥니다.
+        프레임 수·재생속도는 그대로고, 한도 이하인 GIF는 손대지 않습니다.
+      </div>
+    </div>
+  </div>
+
+  <div class="row" style="align-items:flex-start">
     <label style="padding-top:8px">프레임 시퀀스</label>
     <div style="flex:1;min-width:240px">
       <input type="text" id="sequence" placeholder="예: 122331  또는  1,2,2,3,3,1   (비워두면 PSD 그대로)"
@@ -701,6 +720,270 @@ async function makeGif(folder, width, height, fps, sequence, workerUrl, strokeRa
   });
 }
 
+/* ═══════════ GIF 용량 압축기 (오지큐 1MB 제한) ═══════════
+   위에서 만든 GIF를 "다 만든 뒤에" 후처리한다. GIF 생성 경로는 전혀 건드리지 않으므로
+   한도 이하인 GIF는 지금까지와 바이트 단위로 완전히 동일하게 나온다.
+
+   방식: 색상 양자화(NeuQuant)를 다시 돌리지 않고 팔레트 색인만 손본다.
+     · 프레임별로 "각 색이 몇 픽셀 쓰였는지" 센다
+     · 많이 쓴 색은 그대로 두고, 거의 안 쓴 색만 tol 이내의 가까운 색으로 흡수시킨다
+     · 같은 색인이 길게 이어지므로 LZW 압축률이 올라간다 (gifsicle --lossy와 같은 목적)
+     · 팔레트 색 값 자체는 바꾸지 않는다 → 주요 색은 픽셀 단위로 원본 그대로
+     · 투명 색인은 흡수하지도 흡수당하지도 않는다 → 배경에 구멍이 뚫리지 않는다
+     · 프레임 수·delay·투명도·재생시간 전부 그대로 → 애니메이션 손실 없음
+   재인코딩이 아니라 색인 재압축이라 24개 처리에 5초면 끝난다. */
+
+// 허용 색 거리 사다리. 성기게 훑어 통과 지점을 찾고, 마지막에 한 번만 중간값을 시도해 강도를 낮춘다.
+const TOL_LADDER = [6, 12, 20, 32, 48, 72];
+
+function lzwDecode(minCodeSize, data, pixelCount) {
+  const clear = 1 << minCodeSize, eoi = clear + 1;
+  const prefix = new Int32Array(4096), suffix = new Uint8Array(4096), stack = new Uint8Array(4096);
+  const out = new Uint8Array(pixelCount);
+  for (let i = 0; i < clear; i++) suffix[i] = i;
+
+  let codeSize = minCodeSize + 1, next = eoi + 1, old = -1, prevFirst = 0, bit = 0, o = 0;
+  const totalBits = data.length * 8;
+
+  for (;;) {
+    if (bit + codeSize > totalBits) break;
+    let code = 0;
+    for (let i = 0; i < codeSize; i++) { code |= ((data[bit >> 3] >> (bit & 7)) & 1) << i; bit++; }
+
+    if (code === eoi) break;
+    if (code === clear) { codeSize = minCodeSize + 1; next = eoi + 1; old = -1; continue; }
+
+    let sp = 0, c = code;
+    if (code >= next) { stack[sp++] = prevFirst; c = old; }     // KwKwK
+    while (c >= clear) { stack[sp++] = suffix[c]; c = prefix[c]; }
+    const firstChar = suffix[c];
+    stack[sp++] = firstChar;
+    while (sp > 0 && o < pixelCount) out[o++] = stack[--sp];
+
+    if (old !== -1 && next < 4096) {
+      prefix[next] = old; suffix[next] = firstChar; next++;
+      if (next === (1 << codeSize) && codeSize < 12) codeSize++;
+    }
+    old = code; prevFirst = firstChar;
+    if (o >= pixelCount) break;
+  }
+  return out;
+}
+
+// gif.js의 LZWEncoder와 동일한 알고리즘. [minCodeSize, 서브블록…, 0] 완성 블록을 돌려준다.
+function lzwEncode(width, height, pixels, colorDepth) {
+  const EOF = -1, BITS = 12, HSIZE = 5003;
+  const masks = [0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535];
+  const initCodeSize = Math.max(2, colorDepth);
+  const accum = new Uint8Array(256), htab = new Int32Array(HSIZE), codetab = new Int32Array(HSIZE);
+  const out = [];
+  let curAccum = 0, curBits = 0, aCount = 0, freeEnt = 0, maxcode = 0, clearFlg = false;
+  let gInitBits, ClearCode, EOFCode, nBits, remaining, curPixel;
+
+  const MAXCODE = n => (1 << n) - 1;
+  const flushChar = () => { if (aCount > 0) { out.push(aCount); for (let i = 0; i < aCount; i++) out.push(accum[i]); aCount = 0; } };
+  const charOut = c => { accum[aCount++] = c; if (aCount >= 254) flushChar(); };
+  const clHash = () => { for (let i = 0; i < HSIZE; i++) htab[i] = -1; };
+  const nextPixel = () => { if (remaining === 0) return EOF; remaining--; return pixels[curPixel++] & 0xff; };
+
+  function output(code) {
+    curAccum &= masks[curBits];
+    if (curBits > 0) curAccum |= code << curBits; else curAccum = code;
+    curBits += nBits;
+    while (curBits >= 8) { charOut(curAccum & 0xff); curAccum >>= 8; curBits -= 8; }
+    if (freeEnt > maxcode || clearFlg) {
+      if (clearFlg) { maxcode = MAXCODE(nBits = gInitBits); clearFlg = false; }
+      else { ++nBits; maxcode = nBits === BITS ? 1 << BITS : MAXCODE(nBits); }
+    }
+    if (code === EOFCode) {
+      while (curBits > 0) { charOut(curAccum & 0xff); curAccum >>= 8; curBits -= 8; }
+      flushChar();
+    }
+  }
+  const clBlock = () => { clHash(); freeEnt = ClearCode + 2; clearFlg = true; output(ClearCode); };
+
+  out.push(initCodeSize);
+  remaining = width * height; curPixel = 0;
+
+  gInitBits = initCodeSize + 1; clearFlg = false; nBits = gInitBits; maxcode = MAXCODE(nBits);
+  ClearCode = 1 << (gInitBits - 1); EOFCode = ClearCode + 1; freeEnt = ClearCode + 2; aCount = 0;
+  let ent = nextPixel(), hshift = 0;
+  for (let fcode = HSIZE; fcode < 65536; fcode *= 2) ++hshift;
+  hshift = 8 - hshift;
+  clHash(); output(ClearCode);
+  let c;
+  outer: while ((c = nextPixel()) !== EOF) {
+    const fcode = (c << BITS) + ent;
+    let i = (c << hshift) ^ ent;
+    if (htab[i] === fcode) { ent = codetab[i]; continue; }
+    if (htab[i] >= 0) {
+      let disp = HSIZE - i; if (i === 0) disp = 1;
+      do {
+        if ((i -= disp) < 0) i += HSIZE;
+        if (htab[i] === fcode) { ent = codetab[i]; continue outer; }
+      } while (htab[i] >= 0);
+    }
+    output(ent); ent = c;
+    if (freeEnt < (1 << BITS)) { codetab[i] = freeEnt++; htab[i] = fcode; }
+    else clBlock();
+  }
+  output(ent); output(EOFCode);
+  out.push(0);
+  return out;
+}
+
+function parseGif(bytes) {
+  let i = 6;   // GIF89a
+  const width = bytes[i] | (bytes[i+1] << 8), height = bytes[i+2] | (bytes[i+3] << 8);
+  const packed = bytes[i+4], bgIndex = bytes[i+5], aspect = bytes[i+6];
+  i += 7;
+  let gct = null;
+  if (packed & 0x80) { const n = 3 * (2 ** ((packed & 7) + 1)); gct = bytes.subarray(i, i + n); i += n; }
+
+  const readSubBlocks = () => {
+    const parts = [];
+    while (bytes[i]) { const n = bytes[i]; parts.push(bytes.subarray(i + 1, i + 1 + n)); i += n + 1; }
+    i++;
+    let total = 0; for (const p of parts) total += p.length;
+    const buf = new Uint8Array(total);
+    let o = 0; for (const p of parts) { buf.set(p, o); o += p.length; }
+    return buf;
+  };
+
+  const frames = [], preBlocks = [];
+  let pending = null;
+  while (i < bytes.length) {
+    const b = bytes[i];
+    if (b === 0x21) {                                   // Extension
+      const label = bytes[i + 1];
+      if (label === 0xf9) {                             // Graphic Control
+        const flags = bytes[i + 3];
+        pending = { dispose: (flags >> 2) & 7, userInput: !!(flags & 2), transparent: !!(flags & 1),
+                    delay: bytes[i + 4] | (bytes[i + 5] << 8), transIndex: bytes[i + 6] };
+        i += 8;
+      } else {
+        const start = i;
+        i += 2; while (bytes[i]) i += bytes[i] + 1; i++;
+        if (!frames.length) preBlocks.push(bytes.subarray(start, i));   // NETSCAPE 루프 확장 등
+      }
+    } else if (b === 0x2c) {                            // Image Descriptor
+      const x = bytes[i+1] | (bytes[i+2] << 8), y = bytes[i+3] | (bytes[i+4] << 8);
+      const w = bytes[i+5] | (bytes[i+6] << 8), h = bytes[i+7] | (bytes[i+8] << 8);
+      const f = bytes[i+9];
+      i += 10;
+      let lct = null;
+      if (f & 0x80) { const n = 3 * (2 ** ((f & 7) + 1)); lct = bytes.subarray(i, i + n); i += n; }
+      const minCodeSize = bytes[i++];
+      const lzw = readSubBlocks();
+      frames.push({ ...(pending || { dispose: 0, transparent: false, delay: 0, transIndex: 0 }),
+                    x, y, w, h, interlaced: !!(f & 0x40), palette: lct || gct, usedGct: !lct, minCodeSize, lzw });
+      pending = null;
+    } else if (b === 0x3b) break;
+    else i++;
+  }
+  return { width, height, gct, packed, bgIndex, aspect, frames, preBlocks };
+}
+
+function writeGif(gif, frames) {
+  let buf = new Uint8Array(1 << 20), len = 0;
+  const need = n => {
+    if (len + n <= buf.length) return;
+    let cap = buf.length; while (cap < len + n) cap *= 2;
+    const nb = new Uint8Array(cap); nb.set(buf.subarray(0, len)); buf = nb;
+  };
+  const u8 = v => { need(1); buf[len++] = v; };
+  const u16 = v => { need(2); buf[len++] = v & 0xff; buf[len++] = (v >> 8) & 0xff; };
+  const blk = (src, from, n) => { need(n); for (let k = 0; k < n; k++) buf[len++] = src[from + k]; };
+
+  for (const ch of 'GIF89a') u8(ch.charCodeAt(0));
+  u16(gif.width); u16(gif.height);
+  u8(gif.packed); u8(gif.bgIndex); u8(gif.aspect);
+  if (gif.gct) blk(gif.gct, 0, gif.gct.length);
+  for (const e of gif.preBlocks) blk(e, 0, e.length);
+
+  for (const f of frames) {
+    u8(0x21); u8(0xf9); u8(4);
+    u8(((f.dispose & 7) << 2) | (f.userInput ? 2 : 0) | (f.transparent ? 1 : 0));
+    u16(f.delay); u8(f.transIndex); u8(0);
+
+    u8(0x2c); u16(f.x); u16(f.y); u16(f.w); u16(f.h);
+    const hasLct = !f.usedGct;
+    u8((hasLct ? 0x80 | (Math.log2(f.palette.length / 3) - 1) : 0) | (f.interlaced ? 0x40 : 0));
+    if (hasLct) blk(f.palette, 0, f.palette.length);
+
+    if (f.block) blk(f.block, 0, f.block.length);        // 색인을 새로 압축한 프레임
+    else {                                               // 손 안 댄 프레임 — 원본 압축 데이터 그대로
+      u8(f.minCodeSize);
+      let p = 0;
+      while (p < f.lzw.length) {
+        const n = Math.min(255, f.lzw.length - p);
+        u8(n); blk(f.lzw, p, n); p += n;
+      }
+      u8(0);
+    }
+  }
+  u8(0x3b);
+  return buf.slice(0, len);
+}
+
+// 거의 안 쓰인 색을 tol 이내의 자주 쓰인 색으로 흡수 (팔레트 색 값은 그대로 둔다)
+function mergeSimilarColors(gif, tol) {
+  const tol2 = tol * tol;
+  return gif.frames.map(f => {
+    const pal = f.palette, n = pal.length / 3;
+    const idx = lzwDecode(f.minCodeSize, f.lzw, f.w * f.h);
+
+    const hist = new Uint32Array(n);
+    for (let p = 0; p < idx.length; p++) hist[idx[p]]++;
+
+    const order = [];
+    for (let v = 0; v < n; v++) if (hist[v]) order.push(v);
+    order.sort((a, b) => hist[b] - hist[a]);            // 많이 쓴 색부터 자리를 잡는다
+
+    const remap = new Uint8Array(n), keep = [];
+    for (let v = 0; v < n; v++) remap[v] = v;
+    let merged = 0;
+    for (const v of order) {
+      if (f.transparent && v === f.transIndex) { keep.push(v); continue; }
+      let best = -1, bd = tol2;
+      for (const k of keep) {
+        if (f.transparent && k === f.transIndex) continue;
+        const dr = pal[v*3] - pal[k*3], dg = pal[v*3+1] - pal[k*3+1], db = pal[v*3+2] - pal[k*3+2];
+        const d = dr*dr + dg*dg + db*db;
+        if (d <= bd) { bd = d; best = k; }
+      }
+      if (best >= 0) { remap[v] = best; merged++; }
+      else keep.push(v);
+    }
+    if (!merged) return { ...f };
+
+    for (let p = 0; p < idx.length; p++) idx[p] = remap[idx[p]];
+    return { ...f, block: lzwEncode(f.w, f.h, idx, 8), merged };
+  });
+}
+
+// 한도 밑으로 내려가는 가장 낮은 허용거리를 찾아 압축한다
+function shrinkGif(bytes, limitBytes, log2) {
+  if (bytes.length <= limitBytes) return { bytes, tol: 0 };
+  const gif = parseGif(bytes);
+  let last = bytes, lastFail = 0;
+  for (const tol of TOL_LADDER) {
+    const out = writeGif(gif, mergeSimilarColors(gif, tol));
+    if (log2) log2(tol, out.length);
+    if (out.length <= limitBytes) {
+      const mid = Math.round((lastFail + tol) / 2);     // 통과·실패 사이를 한 번만 더 시도
+      if (mid > lastFail && mid < tol) {
+        const out2 = writeGif(gif, mergeSimilarColors(gif, mid));
+        if (log2) log2(mid, out2.length);
+        if (out2.length <= limitBytes) return { bytes: out2, tol: mid };
+      }
+      return { bytes: out, tol };
+    }
+    lastFail = tol; last = out;
+  }
+  return { bytes: last, tol: -1 };
+}
+
 /* ───────────── 메인 · 탭 이미지 (PNG 직접 업로드) ───────────── */
 let mainImgCanvas = null;
 let tabImgCanvas = null;
@@ -892,14 +1175,19 @@ $('make').addEventListener('click', async () => {
   const prefixBase = (customZip || 'ogq').replace(/[\/\\:*?"<>|]/g, '_').replace(/\.zip$/i, '');
   const zip = new JSZip();
   let fileCount = 0;
+  const oversized = [];   // 최대 압축으로도 용량 한도를 못 맞춘 GIF
 
   // 1) PSD → GIF (클튜: 폴더=스티커 / 프크: 파일=스티커)
   if (psdFiles.length) {
     let fps = Math.max(10, Math.min(40, parseInt($('fps').value) || 18));
     const sequence = parseSequence($('sequence').value);
     const strokeRadius = Math.max(0, Math.min(20, parseInt($('strokeNum').value) || 0));
+    // 파인더·오지큐가 쓰는 10진 기준(1MB = 1,000,000바이트). 2진 기준(1,048,576)보다 엄격해 양쪽 다 안전.
+    const limitBytes = $('autoShrink').checked
+      ? Math.round(Math.max(0.1, parseFloat($('sizeLimit').value) || 0.95) * 1000 * 1000) : 0;
 
     log(`\n🚀 GIF 시작 (${mode === 'procreate' ? '프크' : '클튜'} / FPS ${fps} / 외곽선 ${strokeRadius}px / ${width}×${height})`);
+    log(limitBytes ? `   ↳ 용량 제한 ${(limitBytes / 1e6).toFixed(2)}MB — 초과분만 자동 압축` : `   ↳ 용량 제한 없음`, 'dim');
     if (sequence) log(`   ↳ 시퀀스 적용: [${sequence.join(', ')}] (${sequence.length}프레임)`, 'ok');
     else log(`   ↳ 시퀀스 없음 — 프레임 순서 그대로`, 'dim');
 
@@ -926,12 +1214,28 @@ $('make').addEventListener('click', async () => {
       log(`[${String(i+1).padStart(2,'0')}/${stickers.length}] ${st.gifName} 인코딩 중…`);
       if (st.psdW !== width || st.psdH !== height) log(`   ↳ ${st.psdW}×${st.psdH} → ${width}×${height} 자동 변환 (contain · 가운데 정렬)`, 'dim');
       try {
-        const blob = await makeGif(st.node, width, height, fps, sequence, workerUrl, strokeRadius, st.psdW, st.psdH);
+        let blob = await makeGif(st.node, width, height, fps, sequence, workerUrl, strokeRadius, st.psdW, st.psdH);
+
+        // 한도를 넘는 GIF만 압축 — 이하면 위에서 만든 결과가 그대로 나간다
+        if (limitBytes && blob.size > limitBytes) {
+          const t0 = performance.now();
+          const before = blob.size;
+          const src = new Uint8Array(await blob.arrayBuffer());
+          const r = shrinkGif(src, limitBytes,
+            (tol, size) => log(`     허용거리 ${tol} → ${(size/1024).toFixed(0)} KB`, 'dim'));
+          blob = new Blob([r.bytes], { type: 'image/gif' });
+          log(`  🗜 ${(before/1024).toFixed(0)} KB → ${(blob.size/1024).toFixed(0)} KB` +
+              ` (색 병합 허용거리 ${r.tol < 0 ? '최대' : r.tol} · ${Math.round(performance.now()-t0)}ms)`,
+              r.tol < 0 ? 'err' : 'ok');
+        }
+
         let nm = st.gifName.replace(/[\/\\:*?"<>|]/g, '_'); const baseNm = nm; let n = 2;
         while (usedNames.has(nm)) nm = `${baseNm} (${n++})`;
         usedNames.add(nm);
         zip.file(`${nm}.gif`, blob); fileCount++;
-        log(`  ✅ ${nm}.gif (${(blob.size/1024).toFixed(1)} KB)`, 'ok');
+        const over = limitBytes && blob.size > limitBytes;
+        log(`  ${over ? '⚠️' : '✅'} ${nm}.gif (${(blob.size/1024).toFixed(1)} KB)`, over ? 'err' : 'ok');
+        if (over) oversized.push(`${nm}.gif (${(blob.size/1e6).toFixed(2)}MB)`);
       } catch (e) {
         log(`  ❌ 실패: ${e.message}`, 'err');
       }
@@ -962,6 +1266,11 @@ $('make').addEventListener('click', async () => {
   if (fileCount === 0) {
     log(`⚠️ 만들 결과물이 없습니다.`, 'err');
     $('make').disabled = false; return;
+  }
+
+  if (oversized.length) {
+    log(`\n⚠️ 용량 한도를 못 맞춘 GIF ${oversized.length}개 — 이 온티는 프레임 수를 줄이거나 그림 요소를 덜어내야 합니다:`, 'err');
+    oversized.forEach(n => log(`   • ${n}`, 'err'));
   }
 
   log(`\n📦 ZIP 묶는 중… (${fileCount}개 파일)`);
